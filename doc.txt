@@ -1,0 +1,90 @@
+_Nationality_
+_nationality_
+
+This collection provides one file:
+
+ _nationality.ss_: maps country names to their nationalities
+
+======================================================================
+
+nationality.ss
+--------------
+
+> (location? s) : string -> boolean
+
+Determines whether the string `s' is the name of a known geographical
+location.
+
+> (location-inhabited? loc) : location -> boolean
+
+Determines whether the location `loc' is the name of a location with
+an associated nationality.
+
+> locations : (listof location)
+
+The list of all known geographical locations, sorted in alphabetical
+order.
+
+> inhabited-locations : (listof location)
+
+The list of all known geographical locations with native populations,
+sorted in alphabetical order. Querying the nationality of any of these
+locations will not result in an exn:fail:uninhabited location.
+
+> (nationality-adjective s [modifier]) : string [modifier] -> string
+
+Provides the adjective form of the English word for the nationality
+associated with the given geographical location.
+
+If `s' is not the name of a known geographical location, an exception
+of type exn:fail:unknown is raised. If `s' is a known location but
+does not have an associated nationality, an exception of type
+exn:fail:uninhabited is raised.
+
+If `modifier' is 'singular (the default), the adjective is given in
+the singular number and masculine or neuter gender. If `modifier' is
+'feminine/singular, the adjective is given in the singular number and
+feminine or neuter gender. If `modifier' is 'plural, the adjective is
+given in the plural number and neuter or masculine gender.
+
+> (nationality-noun s [modifier]) : string [modifier] -> string
+
+Provides the noun form of the English word for the nationality
+associated with the given geographical location.
+
+If `s' is not the name of a known geographical location, an exception
+of type exn:fail:unknown is raised. If `s' is a known location but
+does not have an associated nationality, an exception of type
+exn:fail:uninhabited is raised.
+
+If `modifier' is 'singular (the default), the noun is given in the
+singular number and masculine or neuter gender. If `modifier' is
+'feminine/singular, the noun is given in the singular number and
+feminine or neuter gender. If `modifier' is 'plural, the noun is given
+in the plural number and neuter or masculine gender.
+
+> (location->phrase s [capitalized?]) : string [boolean] -> string
+
+Converts the name of a location in the comma-separated form used by
+this module into a more human-readable English form without the
+comma. If `capitalized?' is #f, leading articles are not
+capitalized (though leading proper nouns are always capitalized). The
+default value of `capitalized?' is #t.
+
+EXCEPTIONS -----------------------------------------------------------
+
+> exn:fail:unknown
+
+Raised in response to queries about unknown locations.
+
+> exn:fail:uninhabited
+
+Raised in response to nationality queries about locations that do not
+have native populations.
+
+EXAMPLES -------------------------------------------------------------
+
+> (nationality-adjective "Botswana" 'singular)
+"Motswana"
+> (nationality-adjective "Botswana" 'plural)
+"Batswana"
