@@ -134,15 +134,16 @@
   (define split (regexp-split #rx", *" location))
   (define len (length split))
   (printf "~v~n" split)
-  (cond [(= len 1) location]
-        [else
-         (define rev (reverse split))
-         (define tail (car rev))
-         (define head (reverse (cdr rev)))
-         (define phrase (apply string-append (cons tail (cons " " head))))
-         (if capitalized?
-             phrase
-             (regexp-replace #rx"^The " phrase "the "))]))
+  (cond
+    [(= len 1) location]
+    [else
+     (define rev (reverse split))
+     (define tail (car rev))
+     (define head (reverse (cdr rev)))
+     (define phrase (apply string-append (cons tail (cons " " head))))
+     (if capitalized?
+         phrase
+         (regexp-replace #rx"^The " phrase "the "))]))
 
 (provide/contract [location? (string? . -> . boolean?)]
                   [location-inhabited? (location? . -> . boolean?)]
