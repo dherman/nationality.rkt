@@ -3,9 +3,8 @@
 (require (for-syntax racket/base)
          racket/contract
          racket/list
-         racket/string
-         racket/runtime-path
-         (for-syntax mzlib/etc))
+         racket/string racket/function racket/match
+         (for-syntax racket/file syntax/parse racket/runtime-path))
 
 ;; NOTE: no collective plurals
 
@@ -13,28 +12,26 @@
 ;; DATA DEFINITIONS
 ;; =============================================================================
 
-(define-struct (exn:fail:uninhabited exn:fail) ())
-(define-struct (exn:fail:unknown exn:fail) ())
+(struct exn:fail:uninhabited exn:fail ())
+(struct exn:fail:unknown exn:fail ())
 
-(define-syntax raise-uninhabited
-  (syntax-rules ()
-    [(_ nation) (raise (make-exn:fail:uninhabited
-                        (string->immutable-string
-                         (format "~a: no known inhabitants" nation))
-                        (current-continuation-marks)))]))
+(define-syntax-rule (raise-uninhabited nation)
+  (raise (exn:fail:uninhabited
+          (string->immutable-string
+           (format "~a: no known inhabitants" nation))
+          (current-continuation-marks))))
 
-(define-syntax raise-unknown
-  (syntax-rules ()
-    [(_ nation) (raise (make-exn:fail:unknown
-                        (string->immutable-string
-                         (format "unknown geographical location: ~a" nation))
-                        (current-continuation-marks)))]))
+(define-syntax-rule (raise-unknown nation)
+  (raise (exn:fail:unknown
+          (string->immutable-string
+           (format "unknown geographical location: ~a" nation))
+          (current-continuation-marks))))
 
 ;; type = (union 'singular 'feminine/singular 'plural)
 ;; pos-map = (alistof type string)
 ;; row = pos-map * pos-map
 
-(define-struct row (noun adjective))
+(struct row (noun adjective))
 
 ;; =============================================================================
 ;; DATABASE
@@ -43,31 +40,27 @@
 ;; parse-row : (alistof (union 'noun 'adjective) pos-map) -> row
 (define (parse-row row-sexp)
   (and row-sexp
-       (make-row (cdr (assq 'noun row-sexp))
+       (row (cdr (assq 'noun row-sexp))
                  (cdr (assq 'adjective row-sexp)))))
 
-(define-syntax (load-database stx)
-  (syntax-case stx ()
-    [(_ filename)
-     (string? (syntax->datum #'filename))
-     (let* ([fn (build-path (this-expression-source-directory) (syntax->datum #'filename))]
-            [data (with-input-from-file fn read)])
-       #`(let ([sexp (quote #,data)]
-               [table (make-hasheq)])
-           (for-each (lambda (entry)
-                       (hash-set! table
-                                  (car entry)
-                                  (parse-row (cdr entry))))
-                     sexp)
-           table))]))
+(begin-for-syntax (define-runtime-path here "."))
 
-(define database (load-database "database.en.txt"))
+(define-syntax (load-database stx)
+  (syntax-parse stx 
+    [(_ filename:str)
+     (let* ([fn (build-path here (syntax->datum #'filename))]
+            [data (file->value fn)])
+       #`(for/hash ([entry (quote #,data)])
+           (values (car entry)
+                   (parse-row (cdr entry)))))]))
+
+(define database (load-database "database.en.rktd"))
 
 ;; location? : string -> boolean
 (define (location? name)
-  (let/ec break
-    (hash-ref database name (lambda () (break #f)))
-    #t))
+  (and
+   (hash-ref database name #f)
+   #t))
 
 ;; location-inhabited? : location -> boolean
 (define (location-inhabited? locn)
@@ -75,14 +68,12 @@
 
 ;; lookup-location : location -> row
 (define (lookup-location location)
-  (hash-ref database location (lambda ()
-                                (raise-unknown location))))
+  (hash-ref database location (λ () (raise-unknown location))))
 
 (define locations
-  (sort (hash-map database (lambda (key val) key)) string<?))
+  (sort (hash-keys database) string<?))
 (define inhabited-locations (filter location-inhabited? locations))
-(define uninhabited-locations (filter (compose not location-inhabited?)
-                                      locations))
+(define uninhabited-locations (filter-not location-inhabited? locations))
 
 ;; =============================================================================
 ;; NATIONALITY LOOKUP
@@ -90,14 +81,14 @@
 
 ;; try : (cons symbol string) * (listof symbol) -> (optional string)
 (define (try pair keys)
-  (let ([key (car pair)])
-    (if (eq? key '*)
-        (cdr pair)
-        (let loop ([keys keys])
-          (cond
-            [(null? keys) #f]
-            [(eq? key (car keys)) (cdr pair)]
-            [else (loop (cdr keys))])))))
+  (define key (car pair))
+  (if (eq? key '*)
+      (cdr pair)
+      (let loop ([keys keys])
+        (cond
+          [(null? keys) #f]
+          [(eq? key (car keys)) (cdr pair)]
+          [else (loop (cdr keys))]))))
 
 ;; lookup : (alistof symbol string) * (listof symbol) -> (optional string)
 (define (lookup entry keys)
@@ -116,12 +107,11 @@
 
 ;; nationality-lookup-function : (row -> pos-map)
 ;;                            -> (location * [type] -> string)
-(define (nationality-lookup-function selector)
-  (lambda (location [type 'singular])
-    (let ([row (lookup-location location)])
-      (if (not row)
-          (raise-uninhabited location)
-          (lookup (selector row) (type-keys type))))))
+(define ((nationality-lookup-function selector) location [type 'singular])
+  (define row (lookup-location location))
+  (unless row
+    (raise-uninhabited location))
+  (lookup (selector row) (type-keys type)))
 
 ;; nationality-adjective : location * [type] -> string
 (define nationality-adjective (nationality-lookup-function row-adjective))
@@ -141,18 +131,18 @@
 
 ;; location->phrase : string [boolean] -> string
 (define (location->phrase location [capitalized? #t])
-  (let* ([split (regexp-split #rx", *" location)]
-         [len (length split)])
-    (printf "~v~n" split)
-    (if (= len 1)
-        location
-        (let* ([rev (reverse split)]
-               [tail (car rev)]
-               [head (reverse (cdr rev))])
-          (let ([phrase (apply string-append (cons tail (cons " " head)))])
-            (if capitalized?
-                phrase
-                (regexp-replace #rx"^The " phrase "the ")))))))
+  (define split (regexp-split #rx", *" location))
+  (define len (length split))
+  (printf "~v~n" split)
+  (cond [(= len 1) location]
+        [else
+         (define rev (reverse split))
+         (define tail (car rev))
+         (define head (reverse (cdr rev)))
+         (define phrase (apply string-append (cons tail (cons " " head))))
+         (if capitalized?
+             phrase
+             (regexp-replace #rx"^The " phrase "the "))]))
 
 (provide/contract [location? (string? . -> . boolean?)]
                   [location-inhabited? (location? . -> . boolean?)]
